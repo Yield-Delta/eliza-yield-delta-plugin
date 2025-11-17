@@ -6,6 +6,7 @@ interface SymphonyConfig {
   chainId: number;
   chainName: string;
   rpcUrl: string;
+  apiUrl: string;
   nativeAddress: string;
   wrappedNativeAddress: string;
   slippage: string;
@@ -44,7 +45,7 @@ export class SymphonyDexProvider {
   private config: SymphonyConfig;
   private publicClient: any;
 
-  constructor(networkConfig: { network: string; rpcUrl: string }) {
+  constructor(networkConfig: { network: string; rpcUrl: string; apiUrl?: string; timeout?: number }) {
     const chain = networkConfig.network === 'mainnet' ? sei : seiTestnet;
     
     this.publicClient = createPublicClient({
@@ -53,10 +54,11 @@ export class SymphonyDexProvider {
     });
 
     this.config = {
-      timeout: 10000,
+      timeout: networkConfig.timeout || 10000,
       chainId: networkConfig.network === 'mainnet' ? 1329 : 1328,
       chainName: "sei",
       rpcUrl: networkConfig.rpcUrl,
+      apiUrl: networkConfig.apiUrl || "https://api.symphony.finance",
       nativeAddress: "0x0",
       wrappedNativeAddress: "0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7",
       slippage: "0.5",
@@ -107,7 +109,7 @@ export class SymphonyDexProvider {
     try {
       const symphonySlippage = slippage || this.config.slippage;
       
-      const quoteUrl = `https://api.symphony.finance/v1/quote`;
+      const quoteUrl = `${this.config.apiUrl}/v1/quote`;
       const params = new URLSearchParams({
         tokenIn: tokenIn.toLowerCase(),
         tokenOut: tokenOut.toLowerCase(),
@@ -159,7 +161,7 @@ export class SymphonyDexProvider {
     try {
       const symphonySlippage = slippage || this.config.slippage;
 
-      const swapUrl = `https://api.symphony.finance/v1/swap`;
+      const swapUrl = `${this.config.apiUrl}/v1/swap`;
       
       const swapParams = {
         tokenIn: tokenIn.toLowerCase(),
@@ -198,7 +200,7 @@ export class SymphonyDexProvider {
    */
   async getSupportedTokens(): Promise<Record<string, TokenData>> {
     try {
-      const tokensUrl = `https://api.symphony.finance/v1/tokens?chainId=${this.config.chainId}`;
+      const tokensUrl = `${this.config.apiUrl}/v1/tokens?chainId=${this.config.chainId}`;
       
       const response = await this.fetchWithTimeout(tokensUrl);
 
@@ -246,7 +248,7 @@ export class SymphonyDexProvider {
     amountIn: string
   ): Promise<any> {
     try {
-      const routeUrl = `https://api.symphony.finance/v1/route`;
+      const routeUrl = `${this.config.apiUrl}/v1/route`;
       const params = {
         tokenIn: tokenIn.toLowerCase(),
         tokenOut: tokenOut.toLowerCase(),

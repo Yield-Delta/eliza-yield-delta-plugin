@@ -48,14 +48,21 @@ export class SeiOracleProvider {
   private fundingRateCache: Map<string, FundingRate[]> = new Map();
   private updateInterval: NodeJS.Timeout | null = null;
 
-  private yeiConfig: YeiOracleConfig = {
-    api3ContractAddress: "0x2880aB155794e7179c9eE2e38200202908C17B43", // YEI's API3 contract address (using Pyth address as placeholder)
-    pythContractAddress: "0x2880aB155794e7179c9eE2e38200202908C17B43", // YEI's Pyth contract address
-    redstoneContractAddress: "0x1111111111111111111111111111111111111111" // YEI's Redstone contract address (placeholder)
-  };
+  private yeiConfig: YeiOracleConfig;
 
   constructor(runtime: IAgentRuntime) {
     this.runtime = runtime;
+
+    // Get oracle addresses from runtime settings with fallback to defaults
+    const api3Address = runtime.getSetting("YEI_API3_CONTRACT") || "0x2880aB155794e7179c9eE2e38200202908C17B43";
+    const pythAddress = runtime.getSetting("YEI_PYTH_CONTRACT") || "0x2880aB155794e7179c9eE2e38200202908C17B43";
+    const redstoneAddress = runtime.getSetting("YEI_REDSTONE_CONTRACT") || "0x1111111111111111111111111111111111111111";
+
+    this.yeiConfig = {
+      api3ContractAddress: api3Address,
+      pythContractAddress: pythAddress,
+      redstoneContractAddress: redstoneAddress
+    };
     this.config = {
       pythPriceFeeds: {
         'BTC': '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',

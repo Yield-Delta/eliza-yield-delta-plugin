@@ -33,6 +33,15 @@ export interface SeiConfig {
     DRAGONSWAP_API_URL?: string;
     ORACLE_API_KEY?: string;
     YEI_API_KEY?: string;
+
+    // Oracle contract addresses
+    YEI_API3_CONTRACT?: string;
+    YEI_PYTH_CONTRACT?: string;
+    YEI_REDSTONE_CONTRACT?: string;
+
+    // Symphony API configuration
+    SYMPHONY_API_URL?: string;
+    SYMPHONY_TIMEOUT?: number;
     
     // Geographic configuration for regulatory compliance
     USER_GEOGRAPHY?: 'US' | 'EU' | 'ASIA' | 'GLOBAL';
@@ -187,6 +196,15 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
     const dragonswapApiUrl = runtime.getSetting("DRAGONSWAP_API_URL");
     const oracleApiKey = runtime.getSetting("ORACLE_API_KEY");
     const yeiApiKey = runtime.getSetting("YEI_API_KEY");
+
+    // Oracle contract addresses
+    const yeiApi3Contract = runtime.getSetting("YEI_API3_CONTRACT");
+    const yeiPythContract = runtime.getSetting("YEI_PYTH_CONTRACT");
+    const yeiRedstoneContract = runtime.getSetting("YEI_REDSTONE_CONTRACT");
+
+    // Symphony API configuration
+    const symphonyApiUrl = runtime.getSetting("SYMPHONY_API_URL");
+    const symphonyTimeout = runtime.getSetting("SYMPHONY_TIMEOUT");
     
     // Geographic configuration
     const userGeography = runtime.getSetting("USER_GEOGRAPHY");
@@ -228,6 +246,11 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
         DRAGONSWAP_API_URL: dragonswapApiUrl,
         ORACLE_API_KEY: oracleApiKey,
         YEI_API_KEY: yeiApiKey,
+        YEI_API3_CONTRACT: yeiApi3Contract,
+        YEI_PYTH_CONTRACT: yeiPythContract,
+        YEI_REDSTONE_CONTRACT: yeiRedstoneContract,
+        SYMPHONY_API_URL: symphonyApiUrl,
+        SYMPHONY_TIMEOUT: symphonyTimeout ? parseInt(symphonyTimeout) : undefined,
         USER_GEOGRAPHY: userGeography,
         PERP_PREFERENCE: perpPreference,
         COINBASE_ADVANCED_API_KEY: coinbaseApiKey,

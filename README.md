@@ -28,11 +28,28 @@ DRAGONSWAP_API_URL=https://api-testnet.dragonswap.app/v1
 SYMPHONY_API_URL=https://api.symphony.finance
 SYMPHONY_TIMEOUT=10000
 
-# YEI Finance Oracle Configuration  
-YEI_API3_CONTRACT=0x... # YEI's API3 contract address
-YEI_PYTH_CONTRACT=0x... # YEI's Pyth contract address
-YEI_REDSTONE_CONTRACT=0x... # YEI's Redstone contract address
+# Oracle Contract Addresses
+YEI_API3_CONTRACT=0x2880aB155794e7179c9eE2e38200202908C17B43
+YEI_PYTH_CONTRACT=0x2880aB155794e7179c9eE2e38200202908C17B43
+YEI_REDSTONE_CONTRACT=0x1111111111111111111111111111111111111111
 ```
+
+### Oracle Contract Addresses
+
+Configure the oracle contract addresses used by YEI Finance:
+
+- `YEI_API3_CONTRACT` - API3 oracle contract address (default: `0x2880aB155794e7179c9eE2e38200202908C17B43`)
+- `YEI_PYTH_CONTRACT` - Pyth Network oracle contract address (default: `0x2880aB155794e7179c9eE2e38200202908C17B43`)
+- `YEI_REDSTONE_CONTRACT` - Redstone oracle contract address (default: `0x1111111111111111111111111111111111111111`)
+
+**Note:** RedStone uses a Pull model (data-on-demand) and may not have a deployed contract address on SEI.
+
+### Symphony Finance Configuration
+
+Configure the Symphony Finance DEX integration:
+
+- `SYMPHONY_API_URL` - Symphony Finance API base URL (default: `https://api.symphony.finance`)
+- `SYMPHONY_TIMEOUT` - API request timeout in milliseconds (default: `10000`)
 
 ## Usage
 
