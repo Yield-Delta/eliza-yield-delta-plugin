@@ -56,6 +56,7 @@ export interface DragonSwapQuote {
 
 export class DragonSwapProvider {
   private baseUrl: string;
+  private graphqlUrl: string;
   private walletProvider?: WalletProvider;
   private routerAddress: `0x${string}`;
 
@@ -63,6 +64,10 @@ export class DragonSwapProvider {
     this.baseUrl = apiUrl || (isTestnet
       ? 'https://api-testnet.dragonswap.app/v1'
       : 'https://api.dragonswap.app/v1');
+
+    // DragonSwap V3 GraphQL API on Goldsky
+    this.graphqlUrl = 'https://api.goldsky.com/api/public/project_clu1fg6ajhsho01x7ajld3f5a/subgraphs/dragonswap-v3-prod/1.0.5/gn';
+
     this.walletProvider = walletProvider;
     
     // Replace with actual DragonSwap router contract addresses
@@ -76,12 +81,34 @@ export class DragonSwapProvider {
    */
   async getPoolInfo(tokenA: string, tokenB: string): Promise<DragonSwapPoolInfo | null> {
     try {
+      // Try REST API first
       const response = await fetch(`${this.baseUrl}/pools/${tokenA.toLowerCase()}/${tokenB.toLowerCase()}`);
-      if (!response.ok) {
-        elizaLogger.warn(`DragonSwap pool info not found for ${tokenA}/${tokenB}`);
-        return null;
+      if (response.ok) {
+        return await response.json();
       }
-      return await response.json();
+
+      // Fallback to GraphQL subgraph
+      elizaLogger.log(`REST API failed, trying GraphQL for ${tokenA}/${tokenB}`);
+      const pools = await this.findPoolByTokens(tokenA, tokenB);
+
+      if (pools && pools.length > 0) {
+        // Return the pool with highest liquidity
+        const bestPool = pools.sort((a, b) =>
+          parseFloat(b.liquidity) - parseFloat(a.liquidity)
+        )[0];
+
+        return {
+          address: bestPool.id,
+          token0: bestPool.token0.id,
+          token1: bestPool.token1.id,
+          fee: bestPool.feeTier || 3000,
+          liquidity: bestPool.liquidity,
+          price: "0" // Would need additional calculation
+        };
+      }
+
+      elizaLogger.warn(`DragonSwap pool info not found for ${tokenA}/${tokenB}`);
+      return null;
     } catch (error) {
       elizaLogger.error(`Failed to get DragonSwap pool info:: ${error}`);
       return null;
@@ -249,6 +276,206 @@ export class DragonSwapProvider {
       elizaLogger.error(`Failed to check DragonSwap liquidity:: ${error}`);
       return true;
     }
+  }
+
+  /**
+   * Query DragonSwap GraphQL API
+   */
+  private async queryGraphQL(query: string, variables?: Record<string, any>): Promise<any> {
+    try {
+      const response = await fetch(this.graphqlUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ query, variables })
+      });
+
+      if (!response.ok) {
+        elizaLogger.warn(`GraphQL query failed: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const result = await response.json();
+      if (result.errors) {
+        elizaLogger.error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return null;
+      }
+
+      return result.data;
+    } catch (error) {
+      elizaLogger.error(`GraphQL query error:: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get pool data from GraphQL subgraph
+   */
+  async getPoolDataFromSubgraph(poolAddress: string): Promise<any> {
+    const query = `
+      query GetPool($poolAddress: String!) {
+        pool(id: $poolAddress) {
+          id
+          token0 {
+            id
+            symbol
+            name
+            decimals
+          }
+          token1 {
+            id
+            symbol
+            name
+            decimals
+          }
+          liquidity
+          sqrtPrice
+          tick
+          feeTier
+          volumeUSD
+          txCount
+        }
+      }
+    `;
+
+    return await this.queryGraphQL(query, { poolAddress: poolAddress.toLowerCase() });
+  }
+
+  /**
+   * Get top pools by volume
+   */
+  async getTopPools(limit: number = 10): Promise<any[]> {
+    const query = `
+      query GetTopPools($limit: Int!) {
+        pools(first: $limit, orderBy: volumeUSD, orderDirection: desc) {
+          id
+          token0 {
+            symbol
+          }
+          token1 {
+            symbol
+          }
+          volumeUSD
+          liquidity
+          feeTier
+        }
+      }
+    `;
+
+    const data = await this.queryGraphQL(query, { limit });
+    return data?.pools || [];
+  }
+
+  /**
+   * Get token price from GraphQL
+   */
+  async getTokenPrice(tokenAddress: string): Promise<number | null> {
+    const query = `
+      query GetToken($tokenAddress: String!) {
+        token(id: $tokenAddress) {
+          derivedETH
+          volume
+          volumeUSD
+          txCount
+        }
+      }
+    `;
+
+    const data = await this.queryGraphQL(query, { tokenAddress: tokenAddress.toLowerCase() });
+    if (data?.token?.derivedETH) {
+      return parseFloat(data.token.derivedETH);
+    }
+    return null;
+  }
+
+  /**
+   * Get recent swaps for a pool
+   */
+  async getRecentSwaps(poolAddress: string, limit: number = 10): Promise<any[]> {
+    const query = `
+      query GetSwaps($poolAddress: String!, $limit: Int!) {
+        swaps(
+          first: $limit,
+          orderBy: timestamp,
+          orderDirection: desc,
+          where: { pool: $poolAddress }
+        ) {
+          id
+          timestamp
+          amount0
+          amount1
+          amountUSD
+          sender
+          recipient
+        }
+      }
+    `;
+
+    const data = await this.queryGraphQL(query, { poolAddress: poolAddress.toLowerCase(), limit });
+    return data?.swaps || [];
+  }
+
+  /**
+   * Search pools by token symbols
+   */
+  async findPoolByTokens(token0Symbol: string, token1Symbol: string): Promise<any[]> {
+    const query = `
+      query FindPools($token0: String!, $token1: String!) {
+        pools(
+          where: {
+            or: [
+              { and: [{ token0_contains_nocase: $token0 }, { token1_contains_nocase: $token1 }] },
+              { and: [{ token0_contains_nocase: $token1 }, { token1_contains_nocase: $token0 }] }
+            ]
+          }
+        ) {
+          id
+          token0 {
+            symbol
+            id
+          }
+          token1 {
+            symbol
+            id
+          }
+          liquidity
+          volumeUSD
+          feeTier
+        }
+      }
+    `;
+
+    const data = await this.queryGraphQL(query, { token0: token0Symbol, token1: token1Symbol });
+    return data?.pools || [];
+  }
+
+  /**
+   * Get liquidity positions for an address
+   */
+  async getUserPositions(userAddress: string): Promise<any[]> {
+    const query = `
+      query GetPositions($userAddress: String!) {
+        positions(where: { owner: $userAddress }) {
+          id
+          liquidity
+          token0 {
+            symbol
+          }
+          token1 {
+            symbol
+          }
+          pool {
+            id
+            feeTier
+          }
+        }
+      }
+    `;
+
+    const data = await this.queryGraphQL(query, { userAddress: userAddress.toLowerCase() });
+    return data?.positions || [];
   }
 
   /**
