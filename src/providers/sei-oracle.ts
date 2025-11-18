@@ -173,49 +173,48 @@ export class SeiOracleProvider {
       // **PRIORITY: Use deployed MockPriceFeed for testing**
       let price: PriceFeed | null = null;
       
-      // First try MockPriceFeed (deployed at 0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f with SEI token at 0x2E983A1Ba5e8b38AAAeC4B440B9dDcFBf72E15d1)
-      try {
-        const mockPrice = await this.getMockPriceFeedPrice(symbol);
-        if (mockPrice && mockPrice > 0) {
-          price = {
-            symbol,
-            price: mockPrice,
-            source: 'mock-price-feed',
-            timestamp: Date.now(),
-            confidence: 0.99 // High confidence for testing
-          };
-          elizaLogger.info(`MockPriceFeed price for ${symbol}: $${mockPrice}`);
+      // COMMENTED OUT: MockPriceFeed to use actual oracles
+      // // First try MockPriceFeed (deployed at 0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f with SEI token at 0x2E983A1Ba5e8b38AAAeC4B440B9dDcFBf72E15d1)
+      // try {
+      //   const mockPrice = await this.getMockPriceFeedPrice(symbol);
+      //   if (mockPrice && mockPrice > 0) {
+      //     price = {
+      //       symbol,
+      //       price: mockPrice,
+      //       source: 'mock-price-feed',
+      //       timestamp: Date.now(),
+      //       confidence: 0.99 // High confidence for testing
+      //     };
+      //     elizaLogger.info(`MockPriceFeed price for ${symbol}: $${mockPrice}`);
+      //   }
+      // } catch (error) {
+      //   elizaLogger.warn(`MockPriceFeed failed for ${symbol}, falling back to other oracles: ${error}`);
+      // }
+      
+      // Use actual oracle sources
+      // Try YEI Finance multi-oracle approach (for YEI-supported symbols)
+      const yeiSupportedSymbols = ['BTC', 'ETH', 'SEI', 'USDC', 'USDT'];
+      if (yeiSupportedSymbols.includes(symbol.toUpperCase())) {
+        try {
+          const yeiPrice = await this.getYeiPrice(symbol);
+          if (yeiPrice && yeiPrice > 0) {
+            price = {
+              symbol,
+              price: yeiPrice,
+              source: 'yei-multi-oracle',
+              timestamp: Date.now(),
+              confidence: 0.95 // High confidence for multi-oracle consensus
+            };
+          }
+        } catch (error) {
+          elizaLogger.warn(`YEI oracle failed for ${symbol}, falling back to other oracles: ${error}`);
         }
-      } catch (error) {
-        elizaLogger.warn(`MockPriceFeed failed for ${symbol}, falling back to other oracles: ${error}`);
       }
       
-      // Fallback to existing oracle sources only if MockPriceFeed fails
-      if (!price) {
-        // Try YEI Finance multi-oracle approach (for YEI-supported symbols)
-        const yeiSupportedSymbols = ['BTC', 'ETH', 'SEI', 'USDC', 'USDT'];
-        if (yeiSupportedSymbols.includes(symbol.toUpperCase())) {
-          try {
-            const yeiPrice = await this.getYeiPrice(symbol);
-            if (yeiPrice && yeiPrice > 0) {
-              price = {
-                symbol,
-                price: yeiPrice,
-                source: 'yei-multi-oracle',
-                timestamp: Date.now(),
-                confidence: 0.95 // High confidence for multi-oracle consensus
-              };
-            }
-          } catch (error) {
-            elizaLogger.warn(`YEI oracle failed for ${symbol}, falling back to other oracles: ${error}`);
-          }
-        }
-        
-        // Other fallbacks
-        if (!price) price = await this.getPythPrice(symbol);
-        if (!price) price = await this.getChainlinkPrice(symbol);
-        if (!price) price = await this.getCexPrice(symbol);
-      }
+      // Other fallbacks
+      if (!price) price = await this.getPythPrice(symbol);
+      if (!price) price = await this.getChainlinkPrice(symbol);
+      if (!price) price = await this.getCexPrice(symbol);
 
       if (price && !isNaN(price.price) && price.price > 0) {
         this.priceCache.set(symbol, price);
@@ -744,10 +743,18 @@ export class SeiOracleProvider {
   }
 }
 
+let oracleInstance: SeiOracleProvider | null = null;
+
 export const oracleProvider = {
   name: "seiOracle",
   get: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
-    const provider = new SeiOracleProvider(runtime);
-    return provider.get(runtime, message, state);
+    // Create or reuse singleton instance
+    if (!oracleInstance) {
+      oracleInstance = new SeiOracleProvider(runtime);
+      // Start automatic price updates
+      oracleInstance.startPriceUpdates();
+      elizaLogger.info("SEI Oracle Provider initialized and price updates started");
+    }
+    return oracleInstance.get(runtime, message, state);
   }
 };
