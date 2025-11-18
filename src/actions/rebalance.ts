@@ -123,12 +123,12 @@ class PortfolioRebalancer {
       const portfolioBalances = await this.getPortfolioBalances(walletAddress);
       const totalValue = Object.values(portfolioBalances).reduce((sum, value) => sum + value, 0);
 
-      elizaLogger.info(`DEBUG: Portfolio balances for ${walletAddress}:`, portfolioBalances);
+      elizaLogger.info(`DEBUG: Portfolio balances for ${walletAddress}: ${JSON.stringify(portfolioBalances)}`);
       elizaLogger.info(`DEBUG: Total portfolio value: ${totalValue}`);
 
       if (totalValue === 0) {
         elizaLogger.error(`DEBUG: Portfolio analysis failed - no value found for ${walletAddress}`);
-        elizaLogger.error(`DEBUG: Portfolio balances were:`, portfolioBalances);
+        elizaLogger.error(`DEBUG: Portfolio balances were: ${JSON.stringify(portfolioBalances)}`);
         throw new Error('Portfolio has no value');
       }
 
@@ -260,9 +260,9 @@ class PortfolioRebalancer {
       
       elizaLogger.info(`DEBUG: Original address: ${address}`);
       elizaLogger.info(`DEBUG: Lowercase address: ${addressLower}`);
-      elizaLogger.info(`DEBUG: Available test addresses:`, Object.keys(testBalances));
-      elizaLogger.info(`DEBUG: Address exists in testBalances:`, addressLower in testBalances);
-      elizaLogger.info(`DEBUG: Found user balances:`, userBalances);
+      elizaLogger.info(`DEBUG: Available test addresses: ${JSON.stringify(Object.keys(testBalances))}`);
+      elizaLogger.info(`DEBUG: Address exists in testBalances: ${addressLower in testBalances}`);
+      elizaLogger.info(`DEBUG: Found user balances: ${JSON.stringify(userBalances)}`);
       elizaLogger.info(`DEBUG: Token balance for ${symbol}: ${tokenBalance}`);
       return tokenBalance;
     } catch (error) {
