@@ -70,11 +70,8 @@ export class SeiOracleProvider {
         'SEI': '0x53614f1cb0c031d4af66c04cb9c756234adad0e1cee85303795091499a4084eb',
         'USDC': '0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a',
       },
-      chainlinkFeeds: {
-        'BTC/USD': '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419',
-        'ETH/USD': '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419',
-        'SEI/USD': '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419',
-      },
+      // Chainlink is not available on SEI - these feeds are disabled
+      chainlinkFeeds: {},
       cexApis: {
         binance: 'https://fapi.binance.com/fapi/v1',
         bybit: 'https://api.bybit.com/v5',
@@ -211,9 +208,10 @@ export class SeiOracleProvider {
         }
       }
       
-      // Other fallbacks
+      // Other fallbacks for real price data
+      // Priority: Pyth (on-chain) -> CEX (Binance API - most reliable)
+      // Note: Chainlink is not available on SEI
       if (!price) price = await this.getPythPrice(symbol);
-      if (!price) price = await this.getChainlinkPrice(symbol);
       if (!price) price = await this.getCexPrice(symbol);
 
       if (price && !isNaN(price.price) && price.price > 0) {
@@ -289,46 +287,56 @@ export class SeiOracleProvider {
       const feedId = this.config.pythPriceFeeds[symbol];
       if (!feedId) return null;
 
+      // Use SEI mainnet for Pyth - the contract is deployed there
       const publicClient = createPublicClient({
-        chain: seiChains.devnet,
+        chain: seiChains.mainnet,
         transport: http()
       });
 
+      // Pyth EVM uses getPriceUnsafe which returns a Price struct
       const result = await publicClient.readContract({
         address: '0x2880aB155794e7179c9eE2e38200202908C17B43' as `0x${string}`,
         abi: [
           {
-            name: 'queryPriceFeed',
+            name: 'getPriceUnsafe',
             type: 'function',
+            stateMutability: 'view',
             inputs: [{ name: 'id', type: 'bytes32' }],
             outputs: [
-              { name: 'price', type: 'int64' },
-              { name: 'conf', type: 'uint64' },
-              { name: 'expo', type: 'int32' },
-              { name: 'publishTime', type: 'uint256' }
+              {
+                name: 'price',
+                type: 'tuple',
+                components: [
+                  { name: 'price', type: 'int64' },
+                  { name: 'conf', type: 'uint64' },
+                  { name: 'expo', type: 'int32' },
+                  { name: 'publishTime', type: 'uint256' }
+                ]
+              }
             ]
           }
         ] as const,
-        functionName: 'queryPriceFeed',
+        functionName: 'getPriceUnsafe',
         args: [feedId as `0x${string}`]
-      }) as readonly [bigint, bigint, number, bigint];
+      }) as { price: bigint; conf: bigint; expo: number; publishTime: bigint };
 
-      if (!result || result[0] === BigInt(0)) {
+      if (!result || result.price === BigInt(0)) {
         return null; // Invalid price data
       }
 
-      const price = Number(result[0]) / Math.pow(10, 8);
-      const confidence = Number(result[1]) / Math.pow(10, 8);
-      const timestamp = Number(result[3]) * 1000; // Convert to milliseconds
+      // Calculate price: price * 10^expo
+      const priceValue = Number(result.price) * Math.pow(10, result.expo);
+      const confidence = Number(result.conf) * Math.pow(10, result.expo);
+      const timestamp = Number(result.publishTime) * 1000; // Convert to milliseconds
 
       // Validate price data
-      if (isNaN(price) || price <= 0) {
+      if (isNaN(priceValue) || priceValue <= 0) {
         return null;
       }
 
       return {
         symbol,
-        price,
+        price: priceValue,
         timestamp,
         source: 'pyth',
         confidence
@@ -340,56 +348,9 @@ export class SeiOracleProvider {
   }
 
   private async getChainlinkPrice(symbol: string): Promise<PriceFeed | null> {
-    try {
-      const feedAddress = this.config.chainlinkFeeds[`${symbol}/USD`];
-      if (!feedAddress) return null;
-
-      const publicClient = createPublicClient({
-        chain: seiChains.devnet,
-        transport: http()
-      });
-
-      const result = await publicClient.readContract({
-        address: feedAddress as `0x${string}`,
-        abi: [
-          {
-            name: 'latestRoundData',
-            type: 'function',
-            outputs: [
-              { name: 'roundId', type: 'uint80' },
-              { name: 'answer', type: 'int256' },
-              { name: 'startedAt', type: 'uint256' },
-              { name: 'updatedAt', type: 'uint256' },
-              { name: 'answeredInRound', type: 'uint80' }
-            ]
-          }
-        ] as const,
-        functionName: 'latestRoundData'
-      }) as readonly [bigint, bigint, bigint, bigint, bigint];
-
-      if (!result || result[1] === BigInt(0)) {
-        return null; // Invalid price data
-      }
-
-      const price = Number(result[1]) / 1e8; // Chainlink uses 8 decimals
-      const timestamp = Number(result[3]) * 1000; // Convert to milliseconds
-
-      // Validate price data
-      if (isNaN(price) || price <= 0) {
-        return null;
-      }
-
-      return {
-        symbol,
-        price,
-        timestamp,
-        source: 'Chainlink',
-        confidence: 0.99
-      };
-    } catch (error) {
-      elizaLogger.error(`Chainlink price fetch error for ${symbol}: ${error}`);
-      return null;
-    }
+    // Chainlink is not available on SEI network
+    // This function is kept for interface compatibility but always returns null
+    return null;
   }
 
   private async getCexPrice(symbol: string): Promise<PriceFeed | null> {
