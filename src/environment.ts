@@ -52,6 +52,20 @@ export interface SeiConfig {
     COINBASE_ADVANCED_SECRET?: string;
     COINBASE_ADVANCED_PASSPHRASE?: string;
     COINBASE_SANDBOX?: boolean;
+
+    // Vault contract addresses
+    VAULT_FACTORY_ADDRESS?: string;
+    CUSTOMER_DASHBOARD_ADDRESS?: string;
+    DELTA_NEUTRAL_VAULT_ADDRESS?: string;
+    STABLE_MAX_VAULT_ADDRESS?: string;
+    SEI_HYPERGROWTH_VAULT_ADDRESS?: string;
+    BLUE_CHIP_VAULT_ADDRESS?: string;
+    HEDGE_VAULT_ADDRESS?: string;
+    YIELD_FARMING_VAULT_ADDRESS?: string;
+    ARBITRAGE_VAULT_ADDRESS?: string;
+    CONCENTRATED_LIQUIDITY_VAULT_ADDRESS?: string;
+    SEI_VAULT_ADDRESS?: string;
+    USDC_VAULT_ADDRESS?: string;
 }
 
 export const seiChains: Record<SeiNetworkName, SeiChain> = {
@@ -216,6 +230,20 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
     const coinbasePassphrase = runtime.getSetting("COINBASE_ADVANCED_PASSPHRASE");
     const coinbaseSandbox = runtime.getSetting("COINBASE_SANDBOX");
 
+    // Vault contract addresses
+    const vaultFactoryAddress = runtime.getSetting("VAULT_FACTORY_ADDRESS");
+    const customerDashboardAddress = runtime.getSetting("CUSTOMER_DASHBOARD_ADDRESS");
+    const deltaNeutralVaultAddress = runtime.getSetting("DELTA_NEUTRAL_VAULT_ADDRESS");
+    const stableMaxVaultAddress = runtime.getSetting("STABLE_MAX_VAULT_ADDRESS");
+    const seiHypergrowthVaultAddress = runtime.getSetting("SEI_HYPERGROWTH_VAULT_ADDRESS");
+    const blueChipVaultAddress = runtime.getSetting("BLUE_CHIP_VAULT_ADDRESS");
+    const hedgeVaultAddress = runtime.getSetting("HEDGE_VAULT_ADDRESS");
+    const yieldFarmingVaultAddress = runtime.getSetting("YIELD_FARMING_VAULT_ADDRESS");
+    const arbitrageVaultAddress = runtime.getSetting("ARBITRAGE_VAULT_ADDRESS");
+    const concentratedLiquidityVaultAddress = runtime.getSetting("CONCENTRATED_LIQUIDITY_VAULT_ADDRESS");
+    const seiVaultAddress = runtime.getSetting("SEI_VAULT_ADDRESS");
+    const usdcVaultAddress = runtime.getSetting("USDC_VAULT_ADDRESS");
+
     // Check for required variables
     for (const envVar of requiredEnvVars) {
       const key = envVar as keyof SeiConfig;
@@ -257,6 +285,19 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
         COINBASE_ADVANCED_SECRET: coinbaseSecret,
         COINBASE_ADVANCED_PASSPHRASE: coinbasePassphrase,
         COINBASE_SANDBOX: coinbaseSandbox === 'true' || coinbaseSandbox === true,
+        // Vault contract addresses
+        VAULT_FACTORY_ADDRESS: vaultFactoryAddress,
+        CUSTOMER_DASHBOARD_ADDRESS: customerDashboardAddress,
+        DELTA_NEUTRAL_VAULT_ADDRESS: deltaNeutralVaultAddress,
+        STABLE_MAX_VAULT_ADDRESS: stableMaxVaultAddress,
+        SEI_HYPERGROWTH_VAULT_ADDRESS: seiHypergrowthVaultAddress,
+        BLUE_CHIP_VAULT_ADDRESS: blueChipVaultAddress,
+        HEDGE_VAULT_ADDRESS: hedgeVaultAddress,
+        YIELD_FARMING_VAULT_ADDRESS: yieldFarmingVaultAddress,
+        ARBITRAGE_VAULT_ADDRESS: arbitrageVaultAddress,
+        CONCENTRATED_LIQUIDITY_VAULT_ADDRESS: concentratedLiquidityVaultAddress,
+        SEI_VAULT_ADDRESS: seiVaultAddress,
+        USDC_VAULT_ADDRESS: usdcVaultAddress,
     };
 
     elizaLogger.log("SEI configuration validated successfully");
