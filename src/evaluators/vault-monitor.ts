@@ -165,7 +165,7 @@ export const vaultMonitorEvaluator: Evaluator = {
 
     examples: [
         {
-            context: "User wants to check overall vault health",
+            prompt: "How are all the vaults doing?",
             messages: [
                 {
                     name: "{{user1}}",
@@ -184,7 +184,7 @@ export const vaultMonitorEvaluator: Evaluator = {
             outcome: "Vault health report generated with status for all vaults"
         },
         {
-            context: "Scheduled health check",
+            prompt: "Monitor vault health",
             messages: [
                 {
                     name: "{{user1}}",

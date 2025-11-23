@@ -43,7 +43,7 @@ import {
 const DEFAULT_CACHE_TTL = 30;
 const LONG_CACHE_TTL = 300; // 5 minutes for less volatile data
 
-export class VaultProvider implements Provider {
+export class VaultProvider {
     name = "VAULT_PROVIDER";
     description = "Provides access to Yield Delta vault data including portfolio, metrics, and projections";
 
