@@ -321,17 +321,28 @@ class FundingArbitrageEngine {
 async function getOrCreateArbitrageEngine(runtime: IAgentRuntime): Promise<FundingArbitrageEngine> {
   try {
     const config = await validateSeiConfig(runtime);
-    
+
+    // Validate and format private key
+    const privateKey = config.SEI_PRIVATE_KEY;
+    if (!privateKey) {
+      throw new Error('SEI_PRIVATE_KEY not found in environment');
+    }
+
+    // Ensure proper hex format (add 0x prefix if missing)
+    const formattedKey = privateKey.startsWith('0x')
+      ? privateKey
+      : `0x${privateKey}`;
+
     const walletProvider = new WalletProvider(
-      config.SEI_PRIVATE_KEY as `0x${string}`,
-      { 
-        name: config.SEI_NETWORK || "sei-devnet", 
+      formattedKey as `0x${string}`,
+      {
+        name: config.SEI_NETWORK || "sei-devnet",
         chain: seiChains["devnet"]
       }
     );
 
     const oracleProvider = new SeiOracleProvider(runtime);
-    
+
     return new FundingArbitrageEngine(walletProvider, oracleProvider, runtime);
   } catch (error) {
     elizaLogger.error(`Failed to create arbitrage engine:: ${error}`);

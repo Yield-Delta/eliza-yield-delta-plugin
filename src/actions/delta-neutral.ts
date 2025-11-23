@@ -102,15 +102,26 @@ ${optimization.reasoning}`,
       });
 
     } catch (error) {
-      await callback({
-        text: `❌ Error executing delta neutral strategy: ${error instanceof Error ? error.message : 'Unknown error'}
+      const errorMessage = `❌ Error executing delta neutral strategy: ${error instanceof Error ? error.message : 'Unknown error'}
 
 💡 **Troubleshooting:**
 • Check if AI engine is running on port 8000
-• Verify network connectivity  
-• Try again with a simpler command like "delta neutral info"`,
-        content: { type: 'error' }
-      });
+• Verify network connectivity
+• Try again with a simpler command like "delta neutral info"`;
+
+      console.error(errorMessage, error);
+
+      if (callback && typeof callback === 'function') {
+        await callback({
+          text: errorMessage,
+          content: { type: 'error' }
+        });
+      }
+
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   },
 

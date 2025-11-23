@@ -94,12 +94,23 @@ ${aiOptimization.reasoning}`,
         });
       }
     } catch (error) {
-      await callback({
-        text: `Error optimizing AMM positions: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        content: {
-          type: 'error'
-        }
-      });
+      const errorMessage = `Error optimizing AMM positions: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+      console.error(errorMessage, error);
+
+      if (callback && typeof callback === 'function') {
+        await callback({
+          text: errorMessage,
+          content: {
+            type: 'error'
+          }
+        });
+      }
+
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   },
   examples: [
