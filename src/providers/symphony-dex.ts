@@ -50,7 +50,8 @@ export class SymphonyDexProvider {
     
     this.publicClient = createPublicClient({
       chain,
-      transport: http(networkConfig.rpcUrl)
+      transport: http(networkConfig.rpcUrl),
+      pollingInterval: 0, // Disable automatic polling
     });
 
     this.config = {

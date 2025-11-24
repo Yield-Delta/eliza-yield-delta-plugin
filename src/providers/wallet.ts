@@ -41,6 +41,7 @@ export class WalletProvider {
     private currentChain!: ChainWithName;
     private CACHE_EXPIRY_SEC = 5;
     account!: PrivateKeyAccount;
+    private publicClient: ViemPublicClient | null = null;
 
     constructor(
         accountOrPrivateKey: PrivateKeyAccount | `0x${string}`,
@@ -63,12 +64,20 @@ export class WalletProvider {
     }
 
     getPublicClient(): any {
+        // Return cached client if available
+        if (this.publicClient) {
+            return this.publicClient;
+        }
+
         const transport = this.createHttpTransport();
 
-        return createPublicClient({
+        this.publicClient = createPublicClient({
             chain: this.currentChain.chain,
             transport,
+            pollingInterval: 0, // Disable automatic polling
         }) as any;
+
+        return this.publicClient;
     }
 
     // Fix: Use simple WalletClient type without complex generics
@@ -89,6 +98,7 @@ export class WalletProvider {
             chain: this.currentChain.chain,
             transport,
             account: this.account,
+            pollingInterval: 0, // Disable automatic polling
         }) as any;
     }
 
@@ -116,12 +126,8 @@ export class WalletProvider {
             };
         }
 
-        const transport = this.createHttpTransport();
-
-        return createPublicClient({
-            chain: this.currentChain.chain,
-            transport: transport,
-        }) as any;
+        // Use the cached public client
+        return this.getPublicClient();
     }
 
     async getWalletBalance(): Promise<string | null> {

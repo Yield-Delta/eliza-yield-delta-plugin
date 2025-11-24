@@ -70,7 +70,8 @@ export class VaultProvider {
             const chain = this.getChainForNetwork(network);
             this.publicClient = createPublicClient({
                 chain,
-                transport: http(rpcUrl)
+                transport: http(rpcUrl),
+                pollingInterval: 0, // Disable automatic polling
             });
 
             // Load contract addresses from environment

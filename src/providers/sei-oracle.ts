@@ -50,6 +50,10 @@ export class SeiOracleProvider {
 
   private yeiConfig: YeiOracleConfig;
 
+  // Cached public clients to avoid recreating them for each query
+  private mainnetClient: ReturnType<typeof createPublicClient> | null = null;
+  private devnetClient: ReturnType<typeof createPublicClient> | null = null;
+
   constructor(runtime: IAgentRuntime) {
     this.runtime = runtime;
 
@@ -79,6 +83,34 @@ export class SeiOracleProvider {
       },
       updateInterval: 30, // 30 seconds
     };
+  }
+
+  /**
+   * Get or create cached mainnet public client with polling disabled
+   */
+  private getMainnetClient() {
+    if (!this.mainnetClient) {
+      this.mainnetClient = createPublicClient({
+        chain: seiChains.mainnet,
+        transport: http(),
+        pollingInterval: 0, // Disable automatic polling
+      });
+    }
+    return this.mainnetClient;
+  }
+
+  /**
+   * Get or create cached devnet public client with polling disabled
+   */
+  private getDevnetClient() {
+    if (!this.devnetClient) {
+      this.devnetClient = createPublicClient({
+        chain: seiChains.devnet,
+        transport: http(),
+        pollingInterval: 0, // Disable automatic polling
+      });
+    }
+    return this.devnetClient;
   }
 
   async get(
@@ -293,10 +325,7 @@ export class SeiOracleProvider {
       if (!feedId) return null;
 
       // Use SEI mainnet for Pyth - the contract is deployed there
-      const publicClient = createPublicClient({
-        chain: seiChains.mainnet,
-        transport: http()
-      });
+      const publicClient = this.getMainnetClient();
 
       // Pyth EVM uses getPriceUnsafe which returns a Price struct
       const result = await publicClient.readContract({
@@ -582,10 +611,7 @@ export class SeiOracleProvider {
    */
   private async getAPI3Price(symbol: string): Promise<number> {
     const dApiId = this.getAPI3dApiId(symbol);
-    const publicClient = createPublicClient({
-      chain: seiChains.mainnet,
-      transport: http()
-    });
+    const publicClient = this.getMainnetClient();
 
     const result = await publicClient.readContract({
       address: this.yeiConfig.api3ContractAddress as `0x${string}`,
@@ -621,10 +647,7 @@ export class SeiOracleProvider {
    * Redstone Classic Oracle Integration
    */
   private async getRedstonePrice(symbol: string): Promise<number> {
-    const publicClient = createPublicClient({
-      chain: seiChains.mainnet,
-      transport: http()
-    });
+    const publicClient = this.getMainnetClient();
 
     // Only support USDT and USDC for Redstone Classic
     if (!['USDT', 'USDC'].includes(symbol)) {
@@ -632,7 +655,7 @@ export class SeiOracleProvider {
     }
 
     const feedId = this.stringToBytes32(`${symbol}/USD`);
-    
+
     const result = await publicClient.readContract({
       address: this.yeiConfig.redstoneContractAddress as `0x${string}`,
       abi: [
