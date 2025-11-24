@@ -167,53 +167,57 @@ export class SeiOracleProvider {
       //   }
       // }
 
-      // **PRIORITY: Use deployed MockPriceFeed for testing**
+      // **PRIORITY ORDER: Real-time price sources**
+      // 1. CoinGecko (most reliable, no geo-blocking, instant response)
+      // 2. YEI Finance multi-oracle (API3, Pyth, Redstone - for supported symbols)
+      // 3. Pyth Network (on-chain oracle)
+      // 4. Binance CEX API (may be geo-blocked in some regions)
+
       let price: PriceFeed | null = null;
-      
-      // COMMENTED OUT: MockPriceFeed to use actual oracles
-      // // First try MockPriceFeed (deployed at 0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f with SEI token at 0x2E983A1Ba5e8b38AAAeC4B440B9dDcFBf72E15d1)
-      // try {
-      //   const mockPrice = await this.getMockPriceFeedPrice(symbol);
-      //   if (mockPrice && mockPrice > 0) {
-      //     price = {
-      //       symbol,
-      //       price: mockPrice,
-      //       source: 'mock-price-feed',
-      //       timestamp: Date.now(),
-      //       confidence: 0.99 // High confidence for testing
-      //     };
-      //     elizaLogger.info(`MockPriceFeed price for ${symbol}: $${mockPrice}`);
-      //   }
-      // } catch (error) {
-      //   elizaLogger.warn(`MockPriceFeed failed for ${symbol}, falling back to other oracles: ${error}`);
-      // }
-      
-      // Use actual oracle sources
-      // Try YEI Finance multi-oracle approach (for YEI-supported symbols)
-      const yeiSupportedSymbols = ['BTC', 'ETH', 'SEI', 'USDC', 'USDT'];
-      if (yeiSupportedSymbols.includes(symbol.toUpperCase())) {
-        try {
-          const yeiPrice = await this.getYeiPrice(symbol);
-          if (yeiPrice && yeiPrice > 0) {
-            price = {
-              symbol,
-              price: yeiPrice,
-              source: 'yei-multi-oracle',
-              timestamp: Date.now(),
-              confidence: 0.95 // High confidence for multi-oracle consensus
-            };
+
+      // Priority 1: CoinGecko API (most reliable, no geo-blocking)
+      price = await this.getCoinGeckoPrice(symbol);
+      if (price) {
+        elizaLogger.info(`Using CoinGecko price for ${symbol}: $${price.price}`);
+      }
+
+      // Priority 2: Try YEI Finance multi-oracle approach (for YEI-supported symbols)
+      if (!price) {
+        const yeiSupportedSymbols = ['BTC', 'ETH', 'SEI', 'USDC', 'USDT'];
+        if (yeiSupportedSymbols.includes(symbol.toUpperCase())) {
+          try {
+            const yeiPrice = await this.getYeiPrice(symbol);
+            if (yeiPrice && yeiPrice > 0) {
+              price = {
+                symbol,
+                price: yeiPrice,
+                source: 'yei-multi-oracle',
+                timestamp: Date.now(),
+                confidence: 0.95
+              };
+              elizaLogger.info(`Using YEI multi-oracle price for ${symbol}: $${price.price}`);
+            }
+          } catch (error) {
+            elizaLogger.warn(`YEI oracle failed for ${symbol}: ${error}`);
           }
-        } catch (error) {
-          elizaLogger.warn(`YEI oracle failed for ${symbol}, falling back to other oracles: ${error}`);
         }
       }
-      
-      // Other fallbacks for real price data
-      // Priority: Pyth (on-chain) -> CoinGecko (reliable, no geo-blocking) -> Binance CEX (may be geo-blocked)
-      // Note: Chainlink is not available on SEI
-      if (!price) price = await this.getPythPrice(symbol);
-      if (!price) price = await this.getCoinGeckoPrice(symbol);
-      if (!price) price = await this.getCexPrice(symbol);
+
+      // Priority 3: Pyth Network (on-chain oracle)
+      if (!price) {
+        price = await this.getPythPrice(symbol);
+        if (price) {
+          elizaLogger.info(`Using Pyth price for ${symbol}: $${price.price}`);
+        }
+      }
+
+      // Priority 4: Binance CEX API (may be geo-blocked)
+      if (!price) {
+        price = await this.getCexPrice(symbol);
+        if (price) {
+          elizaLogger.info(`Using Binance CEX price for ${symbol}: $${price.price}`);
+        }
+      }
 
       if (price && !isNaN(price.price) && price.price > 0) {
         this.priceCache.set(symbol, price);
@@ -346,12 +350,6 @@ export class SeiOracleProvider {
       elizaLogger.error(`Pyth price fetch error for ${symbol}: ${error}`);
       return null;
     }
-  }
-
-  private async getChainlinkPrice(symbol: string): Promise<PriceFeed | null> {
-    // Chainlink is not available on SEI network
-    // This function is kept for interface compatibility but always returns null
-    return null;
   }
 
   private async getCoinGeckoPrice(symbol: string): Promise<PriceFeed | null> {
@@ -675,68 +673,6 @@ export class SeiOracleProvider {
     return dApiId as `0x${string}`;
   }
 
-  /**
-   * Get price from deployed MockPriceFeed contract (0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f)
-   * With fallback to hardcoded prices if contract call fails
-   */
-  private async getMockPriceFeedPrice(symbol: string): Promise<number> {
-    const tokenAddresses: Record<string, string> = {
-      'SEI': '0x2E983A1Ba5e8b38AAAeC4B440B9dDcFBf72E15d1', // Deployed SEI mock token
-      'USDC': '0x0000000000000000000000000000000000000000', // Placeholder for future deployment
-    };
-
-    try {
-      // First try calling the deployed MockPriceFeed contract
-      const tokenAddress = tokenAddresses[symbol.toUpperCase()];
-      if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
-        const publicClient = createPublicClient({
-          chain: seiChains.devnet,
-          transport: http()
-        });
-
-        const result = await publicClient.readContract({
-          address: '0x8438Ad1C834623CfF278AB6829a248E37C2D7E3f' as `0x${string}`, // New MockPriceFeed address
-          abi: [
-            {
-              name: 'getPrice',
-              type: 'function',
-              inputs: [{ name: 'token', type: 'address' }],
-              outputs: [{ name: '', type: 'uint256' }]
-            }
-          ] as const,
-          functionName: 'getPrice',
-          args: [tokenAddress as `0x${string}`]
-        }) as bigint;
-
-        if (result && result > 0n) {
-          const price = Number(result) / 1e18; // Convert from wei to standard price
-          elizaLogger.info(`MockPriceFeed contract price for ${symbol}: $${price}`);
-          return price;
-        }
-      }
-    } catch (error) {
-      elizaLogger.warn(`MockPriceFeed contract call failed for ${symbol}: ${error}`);
-    }
-
-    // Fallback to hardcoded prices for testing
-    const mockPrices: Record<string, number> = {
-      'SEI': 0.452,    // $0.452 per SEI (matches deployed contract)
-      'USDC': 1.00,    // $1.00 per USDC
-      'USDT': 1.00,    // $1.00 per USDT
-      'ETH': 2500.00,  // $2,500 per ETH
-      'BTC': 45000.00, // $45,000 per BTC
-      'ATOM': 8.50,    // $8.50 per ATOM
-      'DAI': 1.00,     // $1.00 per DAI
-    };
-
-    const price = mockPrices[symbol.toUpperCase()];
-    if (!price) {
-      throw new Error(`No mock price configured for ${symbol}`);
-    }
-
-    elizaLogger.info(`Mock fallback price for ${symbol}: $${price}`);
-    return price;
-  }
 
   /**
    * Convert string to bytes32 for Redstone
