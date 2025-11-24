@@ -7,6 +7,7 @@ import {
     elizaLogger
 } from "@elizaos/core";
 import { vaultProvider } from "../providers/vault-provider";
+import { SeiOracleProvider } from "../providers/sei-oracle";
 import {
     matchVaultName,
     VaultDisplayNames,
@@ -120,8 +121,16 @@ export const projectedReturnsAction: Action = {
 
             // Calculate projected returns
             // Note: The contract expects USD value, so we need to convert SEI to USD
-            // For now, we'll assume the user provides the value in USD terms
-            const depositUsdValue = currency === "SEI" ? amount * 0.45 : amount; // Simplified conversion
+            let depositUsdValue = amount; // Default to amount if already in USD
+
+            if (currency === "SEI") {
+                // Get real-time SEI price from oracle
+                const oracleProvider = new SeiOracleProvider(runtime);
+                const seiPrice = await oracleProvider.getPrice("SEI");
+                const seiPriceValue = seiPrice?.price || 0.45; // Fallback to 0.45 if oracle fails
+                depositUsdValue = amount * seiPriceValue;
+                elizaLogger.info(`Converting ${amount} SEI to USD using price $${seiPriceValue}: $${depositUsdValue}`);
+            }
 
             const projections = await vaultProvider.calculateProjectedReturns(
                 runtime,

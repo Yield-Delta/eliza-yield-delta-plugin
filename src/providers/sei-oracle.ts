@@ -209,9 +209,10 @@ export class SeiOracleProvider {
       }
       
       // Other fallbacks for real price data
-      // Priority: Pyth (on-chain) -> CEX (Binance API - most reliable)
+      // Priority: Pyth (on-chain) -> CoinGecko (reliable, no geo-blocking) -> Binance CEX (may be geo-blocked)
       // Note: Chainlink is not available on SEI
       if (!price) price = await this.getPythPrice(symbol);
+      if (!price) price = await this.getCoinGeckoPrice(symbol);
       if (!price) price = await this.getCexPrice(symbol);
 
       if (price && !isNaN(price.price) && price.price > 0) {
@@ -353,6 +354,55 @@ export class SeiOracleProvider {
     return null;
   }
 
+  private async getCoinGeckoPrice(symbol: string): Promise<PriceFeed | null> {
+    try {
+      // Map symbols to CoinGecko IDs
+      const coinGeckoIds: Record<string, string> = {
+        'BTC': 'bitcoin',
+        'ETH': 'ethereum',
+        'SEI': 'sei-network',
+        'USDC': 'usd-coin',
+        'USDT': 'tether',
+        'SOL': 'solana',
+        'AVAX': 'avalanche-2',
+        'ATOM': 'cosmos',
+        'DAI': 'dai'
+      };
+
+      const coinId = coinGeckoIds[symbol.toUpperCase()];
+      if (!coinId) {
+        return null;
+      }
+
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`
+      );
+
+      if (response.ok) {
+        const data = await response.json() as Record<string, { usd: number }>;
+        const price = data[coinId]?.usd;
+
+        // Validate price data
+        if (!price || isNaN(price) || price <= 0) {
+          return null;
+        }
+
+        return {
+          symbol,
+          price,
+          timestamp: Date.now(),
+          source: 'CoinGecko',
+          confidence: 0.95
+        };
+      }
+
+      return null;
+    } catch (error) {
+      elizaLogger.error(`CoinGecko price fetch error for ${symbol}: ${error}`);
+      return null;
+    }
+  }
+
   private async getCexPrice(symbol: string): Promise<PriceFeed | null> {
     try {
       // Only try for supported symbols
@@ -364,16 +414,16 @@ export class SeiOracleProvider {
       const response = await fetch(
         `${this.config.cexApis.binance}/ticker/price?symbol=${symbol}USDT`
       );
-      
+
       if (response.ok) {
         const data = await response.json() as { price: string };
         const price = parseFloat(data.price);
-        
+
         // Validate price data
         if (isNaN(price) || price <= 0) {
           return null;
         }
-        
+
         return {
           symbol,
           price,
