@@ -13,10 +13,10 @@ import { SeiOracleProvider } from "../providers/sei-oracle";
  *
  * This action handles all cryptocurrency price queries by routing them
  * to the SEI Oracle Provider which fetches real-time prices from:
- * 1. MockPriceFeed contract (priority for testing)
+ * 1. CoinGecko API (primary - reliable, no geo-blocking)
  * 2. YEI Finance multi-oracle (API3, Pyth, Redstone)
- * 3. Binance CEX prices
- * 4. Fallback to hardcoded prices only if all fail
+ * 3. Pyth Network (on-chain oracle)
+ * 4. Binance CEX prices (may be geo-blocked)
  */
 
 const priceQueryTemplate = `Respond to cryptocurrency price queries with accurate, real-time data.
@@ -183,7 +183,7 @@ export const priceQueryAction: Action = {
       {
         name: "{{agentName}}",
         content: {
-          text: "The current price of SEI is $0.4520 (Source: mock-price-feed, updated just now)"
+          text: "The current price of SEI is $0.1345 (Source: CoinGecko)"
         }
       }
     ],
@@ -195,7 +195,7 @@ export const priceQueryAction: Action = {
       {
         name: "{{agentName}}",
         content: {
-          text: "Here are the current cryptocurrency prices:\n\nBTC: $45000.00 (mock-price-feed)\nETH: $2500.00 (mock-price-feed)"
+          text: "Here are the current cryptocurrency prices:\n\nBTC: $68,432.50 (CoinGecko)\nETH: $3,245.67 (CoinGecko)"
         }
       }
     ],
@@ -207,7 +207,7 @@ export const priceQueryAction: Action = {
       {
         name: "{{agentName}}",
         content: {
-          text: "The current price of SEI is $0.4520 (Source: mock-price-feed, updated just now)"
+          text: "The current price of SEI is $0.1345 (Source: CoinGecko)"
         }
       }
     ]
