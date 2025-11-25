@@ -59,12 +59,25 @@ export class SeiOracleProvider {
   private yeiConfig: YeiOracleConfig;
   private yeiMultiOracleAddresses: YeiMultiOracleAddresses;
 
-  // Cached public clients to avoid recreating them for each query
-  private mainnetClient: ReturnType<typeof createPublicClient> | null = null;
-  private devnetClient: ReturnType<typeof createPublicClient> | null = null;
+  // Runtime chain configuration from environment
+  private runtimeChain: ReturnType<typeof createPublicClient>['chain'];
+
+  // Cached public client to avoid recreating it for each query
+  private runtimeClient: ReturnType<typeof createPublicClient> | null = null;
 
   constructor(runtime: IAgentRuntime) {
     this.runtime = runtime;
+
+    // Get the chain configuration from runtime settings (like WalletProvider does)
+    const network = runtime.getSetting("SEI_NETWORK") || "sei-testnet";
+    const networkMap: Record<string, keyof typeof seiChains> = {
+      "sei-mainnet": "mainnet",
+      "sei-testnet": "testnet"
+    };
+    const chainKey = networkMap[network] || "testnet";
+    this.runtimeChain = seiChains[chainKey];
+
+    elizaLogger.info(`SeiOracleProvider: Configured for ${network} (chain: ${chainKey})`);
 
     // Get oracle addresses from runtime settings with fallback to defaults
     const api3Address = runtime.getSetting("YEI_API3_CONTRACT") || "0x2880aB155794e7179c9eE2e38200202908C17B43";
@@ -105,31 +118,17 @@ export class SeiOracleProvider {
   }
 
   /**
-   * Get or create cached mainnet public client with polling disabled
+   * Get or create cached runtime public client with polling disabled
    */
-  private getMainnetClient() {
-    if (!this.mainnetClient) {
-      this.mainnetClient = createPublicClient({
-        chain: seiChains.mainnet,
+  private getRuntimeClient() {
+    if (!this.runtimeClient) {
+      this.runtimeClient = createPublicClient({
+        chain: this.runtimeChain,
         transport: http(),
         pollingInterval: 0, // Disable automatic polling
       });
     }
-    return this.mainnetClient;
-  }
-
-  /**
-   * Get or create cached devnet public client with polling disabled
-   */
-  private getDevnetClient() {
-    if (!this.devnetClient) {
-      this.devnetClient = createPublicClient({
-        chain: seiChains.devnet,
-        transport: http(),
-        pollingInterval: 0, // Disable automatic polling
-      });
-    }
-    return this.devnetClient;
+    return this.runtimeClient;
   }
 
   async get(
@@ -352,8 +351,8 @@ export class SeiOracleProvider {
       const feedId = this.config.pythPriceFeeds[symbol];
       if (!feedId) return null;
 
-      // Use SEI mainnet for Pyth - the contract is deployed there
-      const publicClient = this.getMainnetClient();
+      // Use runtime chain configuration
+      const publicClient = this.getRuntimeClient();
 
       // Pyth EVM uses getPriceUnsafe which returns a Price struct
       const result = await publicClient.readContract({
@@ -508,7 +507,7 @@ export class SeiOracleProvider {
         return null;
       }
 
-      const publicClient = this.getMainnetClient();
+      const publicClient = this.getRuntimeClient();
 
       // YEI Finance Multi-Oracle ABI for getLatestPrice()
       const result = await publicClient.readContract({
@@ -709,7 +708,7 @@ export class SeiOracleProvider {
    */
   private async getAPI3Price(symbol: string): Promise<number> {
     const dApiId = this.getAPI3dApiId(symbol);
-    const publicClient = this.getMainnetClient();
+    const publicClient = this.getRuntimeClient();
 
     const result = await publicClient.readContract({
       address: this.yeiConfig.api3ContractAddress as `0x${string}`,
@@ -745,7 +744,7 @@ export class SeiOracleProvider {
    * Redstone Classic Oracle Integration
    */
   private async getRedstonePrice(symbol: string): Promise<number> {
-    const publicClient = this.getMainnetClient();
+    const publicClient = this.getRuntimeClient();
 
     // Only support USDT and USDC for Redstone Classic
     if (!['USDT', 'USDC'].includes(symbol)) {
