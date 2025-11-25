@@ -39,8 +39,11 @@ export const portfolioQueryAction: Action = {
         const content = message.content?.text?.toLowerCase() || "";
         const originalText = message.content?.text || "";
 
+        elizaLogger.info(`[PORTFOLIO_QUERY] Validating message: "${originalText}"`);
+
         // Check if message contains an Ethereum address
         const hasAddress = extractAddressFromMessage(originalText) !== null;
+        elizaLogger.info(`[PORTFOLIO_QUERY] Has address: ${hasAddress}`);
 
         const portfolioKeywords = [
             "my portfolio",
@@ -70,12 +73,21 @@ export const portfolioQueryAction: Action = {
 
         // Validate if message has portfolio keywords OR contains a wallet address with context
         const hasKeywords = portfolioKeywords.some(keyword => content.includes(keyword));
+        elizaLogger.info(`[PORTFOLIO_QUERY] Has keywords: ${hasKeywords}`);
 
-        if (hasAddress && (content.includes("check") || content.includes("show") || content.includes("portfolio") || content.includes("holdings") || content.includes("positions"))) {
-            return true;
-        }
+        const hasAddressWithContext = hasAddress && (
+            content.includes("check") ||
+            content.includes("show") ||
+            content.includes("portfolio") ||
+            content.includes("holdings") ||
+            content.includes("positions")
+        );
+        elizaLogger.info(`[PORTFOLIO_QUERY] Has address with context: ${hasAddressWithContext}`);
 
-        return hasKeywords;
+        const shouldValidate = hasAddressWithContext || hasKeywords;
+        elizaLogger.info(`[PORTFOLIO_QUERY] Validation result: ${shouldValidate}`);
+
+        return shouldValidate;
     },
 
     description: "Query user's vault portfolio including positions, balances, and withdrawal status",
@@ -91,18 +103,24 @@ export const portfolioQueryAction: Action = {
             elizaLogger.info("Portfolio Query Action triggered");
 
             const messageText = message.content?.text || "";
+            elizaLogger.info(`Message text: "${messageText}"`);
 
             // Try to extract address from message first
             let targetAddress = extractAddressFromMessage(messageText);
+            elizaLogger.info(`Extracted address from message: ${targetAddress || "none"}`);
+
             let isOwnWallet = false;
 
             // If no address in message, try to use agent's wallet
             if (!targetAddress) {
+                elizaLogger.info("No address in message, trying to use agent's wallet");
                 const walletProvider = await initWalletProvider(runtime);
                 targetAddress = walletProvider.getAddress();
                 isOwnWallet = true;
+                elizaLogger.info(`Agent wallet address: ${targetAddress || "none"}`);
 
                 if (!targetAddress) {
+                    elizaLogger.warn("No wallet address available");
                     if (callback) {
                         callback({
                             text: "Please provide a wallet address to check. For example:\n• 'Check holdings for 0x1234...'\n• 'Show portfolio for 0x1234...'\n\nOr configure your own wallet to check your positions with 'what's my portfolio?'",
@@ -120,7 +138,9 @@ export const portfolioQueryAction: Action = {
             elizaLogger.info(`Fetching portfolio for address: ${targetAddress}${isOwnWallet ? " (own wallet)" : " (provided address)"}`);
 
             // Get customer portfolio from vault provider
+            elizaLogger.info(`Calling vaultProvider.getCustomerPortfolio with address: ${targetAddress}`);
             const portfolios = await vaultProvider.getCustomerPortfolio(runtime, targetAddress as `0x${string}`);
+            elizaLogger.info(`Portfolio query returned ${portfolios.length} positions`);
 
             if (portfolios.length === 0) {
                 const noPositionsText = isOwnWallet
@@ -169,14 +189,29 @@ export const portfolioQueryAction: Action = {
             }
 
         } catch (error) {
-            elizaLogger.error(`Error in portfolio query action: ${error instanceof Error ? error.message : String(error)}`);
+            elizaLogger.error("=== Portfolio Query Error ===");
+            elizaLogger.error(`Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+            elizaLogger.error(`Error message: ${error instanceof Error ? error.message : String(error)}`);
+            if (error instanceof Error && error.stack) {
+                elizaLogger.error(`Stack trace: ${error.stack}`);
+            }
+            elizaLogger.error(`Full error object: ${JSON.stringify(error, null, 2)}`);
+            elizaLogger.error("=========================");
+
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            const userFriendlyMessage = `I encountered an error while fetching your portfolio: ${errorMessage}\n\nPlease check the server logs for more details.`;
 
             if (callback) {
                 callback({
-                    text: "I encountered an error while fetching your portfolio. Please try again in a moment.",
+                    text: userFriendlyMessage,
                     content: {
-                        error: error instanceof Error ? error.message : "Unknown error",
-                        action: "PORTFOLIO_QUERY"
+                        error: errorMessage,
+                        action: "PORTFOLIO_QUERY",
+                        errorDetails: error instanceof Error ? {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack
+                        } : { raw: String(error) }
                     }
                 });
             }

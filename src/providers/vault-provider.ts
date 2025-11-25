@@ -62,9 +62,14 @@ export class VaultProvider {
         if (this.initialized) return;
 
         try {
+            elizaLogger.info("=== VaultProvider Initialization Started ===");
+
             // Get network configuration
             const network = runtime.getSetting("SEI_NETWORK") || "sei-mainnet";
+            elizaLogger.info(`Network: ${network}`);
+
             const rpcUrl = runtime.getSetting("SEI_RPC_URL") || this.getDefaultRpcUrl(network);
+            elizaLogger.info(`RPC URL: ${rpcUrl}`);
 
             // Create public client
             const chain = this.getChainForNetwork(network);
@@ -73,10 +78,22 @@ export class VaultProvider {
                 transport: http(rpcUrl),
                 pollingInterval: 0, // Disable automatic polling
             });
+            elizaLogger.info("Public client created successfully");
 
             // Load contract addresses from environment
-            this.vaultFactoryAddress = runtime.getSetting("VAULT_FACTORY_ADDRESS") as Address;
-            this.customerDashboardAddress = runtime.getSetting("CUSTOMER_DASHBOARD_ADDRESS") as Address;
+            const factoryAddress = runtime.getSetting("VAULT_FACTORY_ADDRESS");
+            const dashboardAddress = runtime.getSetting("CUSTOMER_DASHBOARD_ADDRESS");
+
+            elizaLogger.info(`Vault Factory Address from env: ${factoryAddress || "NOT SET"}`);
+            elizaLogger.info(`Customer Dashboard Address from env: ${dashboardAddress || "NOT SET"}`);
+
+            // Dashboard address is optional - we can query vaults directly if not set
+            if (!dashboardAddress) {
+                elizaLogger.warn("⚠️  CUSTOMER_DASHBOARD_ADDRESS not set - will query vaults directly (slower)");
+            }
+
+            this.vaultFactoryAddress = factoryAddress as Address;
+            this.customerDashboardAddress = dashboardAddress as Address;
 
             // Load individual vault addresses
             this.vaultAddresses = {
@@ -92,10 +109,25 @@ export class VaultProvider {
                 [VaultName.USDC]: runtime.getSetting("USDC_VAULT_ADDRESS") as Address
             };
 
+            // Log which vaults are configured
+            const configuredVaults = Object.entries(this.vaultAddresses)
+                .filter(([_, addr]) => addr)
+                .map(([name, _]) => name);
+            elizaLogger.info(`Configured vaults: ${configuredVaults.join(", ") || "NONE"}`);
+
             this.initialized = true;
-            elizaLogger.info(`VaultProvider initialized - Network: ${network}, Factory: ${this.vaultFactoryAddress}, Dashboard: ${this.customerDashboardAddress}`);
+            elizaLogger.info(`✅ VaultProvider initialized successfully`);
+            elizaLogger.info(`   Network: ${network}`);
+            elizaLogger.info(`   Factory: ${this.vaultFactoryAddress || "NOT SET"}`);
+            elizaLogger.info(`   Dashboard: ${this.customerDashboardAddress}`);
+            elizaLogger.info("===========================================");
         } catch (error) {
-            elizaLogger.error(`Failed to initialize VaultProvider: ${error}`);
+            elizaLogger.error("=== VaultProvider Initialization FAILED ===");
+            elizaLogger.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+            if (error instanceof Error && error.stack) {
+                elizaLogger.error(`Stack: ${error.stack}`);
+            }
+            elizaLogger.error("===========================================");
             throw error;
         }
     }
@@ -145,7 +177,7 @@ export class VaultProvider {
         return this.vaultAddresses[vaultName] || null;
     }
 
-    // Get customer portfolio from dashboard contract
+    // Get customer portfolio from dashboard contract (or query vaults directly if no dashboard)
     async getCustomerPortfolio(
         runtime: IAgentRuntime,
         customerAddress: Address
@@ -156,8 +188,14 @@ export class VaultProvider {
         const cached = this.cache.get<FormattedCustomerPortfolio[]>(cacheKey);
         if (cached) return cached;
 
-        if (!this.publicClient || !this.customerDashboardAddress) {
+        if (!this.publicClient) {
             throw new Error("VaultProvider not properly initialized");
+        }
+
+        // If no dashboard contract, query vaults directly
+        if (!this.customerDashboardAddress) {
+            elizaLogger.info("No dashboard contract - querying vaults directly");
+            return await this.getCustomerPortfolioDirectly(customerAddress);
         }
 
         try {
@@ -187,6 +225,71 @@ export class VaultProvider {
             elizaLogger.error(`Failed to get customer portfolio for ${customerAddress}: ${error}`);
             throw error;
         }
+    }
+
+    // Fallback: Query each vault directly (slower but works without dashboard contract)
+    private async getCustomerPortfolioDirectly(
+        customerAddress: Address
+    ): Promise<FormattedCustomerPortfolio[]> {
+        if (!this.publicClient || !this.vaultAddresses) {
+            throw new Error("VaultProvider not properly initialized");
+        }
+
+        elizaLogger.info(`Querying vaults directly for ${customerAddress}...`);
+        const portfolios: FormattedCustomerPortfolio[] = [];
+
+        // Query each configured vault
+        for (const [vaultName, vaultAddress] of Object.entries(this.vaultAddresses)) {
+            if (!vaultAddress) continue; // Skip unconfigured vaults
+
+            try {
+                elizaLogger.info(`Checking ${vaultName} at ${vaultAddress}...`);
+
+                // Get user's share balance
+                const shareBalance = await this.publicClient.readContract({
+                    address: vaultAddress,
+                    abi: [{
+                        name: 'balanceOf',
+                        type: 'function',
+                        stateMutability: 'view',
+                        inputs: [{ name: 'account', type: 'address' }],
+                        outputs: [{ name: '', type: 'uint256' }]
+                    }] as const,
+                    functionName: 'balanceOf',
+                    args: [customerAddress]
+                }) as bigint;
+
+                // If user has no shares in this vault, skip it
+                if (shareBalance === BigInt(0)) {
+                    continue;
+                }
+
+                const displayName = VaultDisplayNames[vaultName as VaultName];
+
+                // For now, we can't get detailed deposit history without the dashboard
+                // So we'll return basic balance information
+                portfolios.push({
+                    vaultAddress,
+                    vaultName: displayName,
+                    shareBalance: Number(formatUnits(shareBalance, 18)),
+                    shareValue: Number(formatUnits(shareBalance, 6)), // Approximate
+                    totalDeposited: 0, // Not available without dashboard
+                    totalWithdrawn: 0, // Not available without dashboard
+                    unrealizedGains: 0, // Not available without dashboard
+                    depositTimestamp: 0, // Not available without dashboard
+                    lockTimeRemaining: 0, // Not available without dashboard
+                    canWithdraw: true // Assume true without lock info
+                });
+
+                elizaLogger.info(`Found position in ${displayName}: ${shareBalance} shares`);
+            } catch (error) {
+                elizaLogger.warn(`Failed to query ${vaultName}: ${error}`);
+                // Continue to next vault
+            }
+        }
+
+        elizaLogger.info(`Direct query complete: found ${portfolios.length} positions`);
+        return portfolios;
     }
 
     // Get vault metrics from dashboard contract
@@ -253,8 +356,12 @@ export class VaultProvider {
                 functionName: "getVaultInfo"
             }) as VaultInfo;
 
+            // Find the vault name from address to use proper display name
+            const vaultName = this.getVaultNameByAddress(vaultAddress);
+            const displayName = vaultName ? VaultDisplayNames[vaultName] : info.name;
+
             const formatted: FormattedVaultInfo = {
-                name: info.name,
+                name: displayName,
                 strategy: info.strategy,
                 token0: info.token0,
                 token1: info.token1,
@@ -270,6 +377,18 @@ export class VaultProvider {
             elizaLogger.error(`Failed to get vault info for ${vaultAddress}: ${error}`);
             throw error;
         }
+    }
+
+    // Helper method to get vault name from address
+    private getVaultNameByAddress(address: Address): VaultName | null {
+        if (!this.vaultAddresses) return null;
+
+        for (const [name, vaultAddr] of Object.entries(this.vaultAddresses)) {
+            if (vaultAddr?.toLowerCase() === address.toLowerCase()) {
+                return name as VaultName;
+            }
+        }
+        return null;
     }
 
     // Get current position from vault contract
