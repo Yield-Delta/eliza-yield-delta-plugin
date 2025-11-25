@@ -34,10 +34,17 @@ export interface SeiConfig {
     ORACLE_API_KEY?: string;
     YEI_API_KEY?: string;
 
-    // Oracle contract addresses
+    // Oracle contract addresses (legacy multi-oracle system)
     YEI_API3_CONTRACT?: string;
     YEI_PYTH_CONTRACT?: string;
     YEI_REDSTONE_CONTRACT?: string;
+
+    // YEI Finance Multi-Oracle token-specific addresses
+    YEI_SEI_ORACLE?: string;
+    YEI_USDC_ORACLE?: string;
+    YEI_USDT_ORACLE?: string;
+    YEI_ETH_ORACLE?: string;
+    YEI_BTC_ORACLE?: string;
 
     // Symphony API configuration
     SYMPHONY_API_URL?: string;
@@ -211,10 +218,17 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
     const oracleApiKey = runtime.getSetting("ORACLE_API_KEY");
     const yeiApiKey = runtime.getSetting("YEI_API_KEY");
 
-    // Oracle contract addresses
+    // Oracle contract addresses (legacy)
     const yeiApi3Contract = runtime.getSetting("YEI_API3_CONTRACT");
     const yeiPythContract = runtime.getSetting("YEI_PYTH_CONTRACT");
     const yeiRedstoneContract = runtime.getSetting("YEI_REDSTONE_CONTRACT");
+
+    // YEI Finance Multi-Oracle token-specific addresses
+    const yeiSeiOracle = runtime.getSetting("YEI_SEI_ORACLE");
+    const yeiUsdcOracle = runtime.getSetting("YEI_USDC_ORACLE");
+    const yeiUsdtOracle = runtime.getSetting("YEI_USDT_ORACLE");
+    const yeiEthOracle = runtime.getSetting("YEI_ETH_ORACLE");
+    const yeiBtcOracle = runtime.getSetting("YEI_BTC_ORACLE");
 
     // Symphony API configuration
     const symphonyApiUrl = runtime.getSetting("SYMPHONY_API_URL");
@@ -277,6 +291,11 @@ export async function validateSeiConfig(runtime: any): Promise<SeiConfig> {
         YEI_API3_CONTRACT: yeiApi3Contract,
         YEI_PYTH_CONTRACT: yeiPythContract,
         YEI_REDSTONE_CONTRACT: yeiRedstoneContract,
+        YEI_SEI_ORACLE: yeiSeiOracle,
+        YEI_USDC_ORACLE: yeiUsdcOracle,
+        YEI_USDT_ORACLE: yeiUsdtOracle,
+        YEI_ETH_ORACLE: yeiEthOracle,
+        YEI_BTC_ORACLE: yeiBtcOracle,
         SYMPHONY_API_URL: symphonyApiUrl,
         SYMPHONY_TIMEOUT: symphonyTimeout ? parseInt(symphonyTimeout) : undefined,
         USER_GEOGRAPHY: userGeography,

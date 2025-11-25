@@ -41,6 +41,14 @@ interface YeiOracleConfig {
   redstoneContractAddress: string;
 }
 
+interface YeiMultiOracleAddresses {
+  SEI?: string;
+  USDC?: string;
+  USDT?: string;
+  ETH?: string;
+  BTC?: string;
+}
+
 export class SeiOracleProvider {
   private runtime: IAgentRuntime;
   private config: OracleConfig;
@@ -49,6 +57,7 @@ export class SeiOracleProvider {
   private updateInterval: NodeJS.Timeout | null = null;
 
   private yeiConfig: YeiOracleConfig;
+  private yeiMultiOracleAddresses: YeiMultiOracleAddresses;
 
   // Cached public clients to avoid recreating them for each query
   private mainnetClient: ReturnType<typeof createPublicClient> | null = null;
@@ -67,6 +76,16 @@ export class SeiOracleProvider {
       pythContractAddress: pythAddress,
       redstoneContractAddress: redstoneAddress
     };
+
+    // Initialize YEI Finance Multi-Oracle addresses with defaults
+    this.yeiMultiOracleAddresses = {
+      SEI: runtime.getSetting("YEI_SEI_ORACLE") || "0xa2aCDc40e5ebCE7f8554E66eCe6734937A48B3f3",
+      USDC: runtime.getSetting("YEI_USDC_ORACLE") || "0xEAb459AD7611D5223A408A2e73b69173F61bb808",
+      USDT: runtime.getSetting("YEI_USDT_ORACLE") || "0x284db472a483e115e3422dd30288b24182E36DdB",
+      ETH: runtime.getSetting("YEI_ETH_ORACLE") || "0x3E45Fb956D2Ba2CB5Fa561c40E5912225E64F7B2",
+      BTC: runtime.getSetting("YEI_BTC_ORACLE")
+    };
+
     this.config = {
       pythPriceFeeds: {
         'BTC': '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
@@ -200,20 +219,29 @@ export class SeiOracleProvider {
       // }
 
       // **PRIORITY ORDER: Real-time price sources**
-      // 1. CoinGecko (most reliable, no geo-blocking, instant response)
-      // 2. YEI Finance multi-oracle (API3, Pyth, Redstone - for supported symbols)
-      // 3. Pyth Network (on-chain oracle)
-      // 4. Binance CEX API (may be geo-blocked in some regions)
+      // 1. YEI Finance Multi-Oracle (PRIMARY - token-specific contracts with getLatestPrice)
+      // 2. CoinGecko (fallback - reliable, no geo-blocking, instant response)
+      // 3. YEI Finance legacy multi-oracle (API3, Pyth, Redstone - for supported symbols)
+      // 4. Pyth Network (on-chain oracle)
+      // 5. Binance CEX API (may be geo-blocked in some regions)
 
       let price: PriceFeed | null = null;
 
-      // Priority 1: CoinGecko API (most reliable, no geo-blocking)
-      price = await this.getCoinGeckoPrice(symbol);
+      // Priority 1: YEI Finance Multi-Oracle (PRIMARY - direct token-specific contracts)
+      price = await this.getYeiMultiOraclePrice(symbol);
       if (price) {
-        elizaLogger.info(`Using CoinGecko price for ${symbol}: $${price.price}`);
+        elizaLogger.info(`Using YEI Multi-Oracle price for ${symbol}: $${price.price}`);
       }
 
-      // Priority 2: Try YEI Finance multi-oracle approach (for YEI-supported symbols)
+      // Priority 2: CoinGecko API (fallback - most reliable, no geo-blocking)
+      if (!price) {
+        price = await this.getCoinGeckoPrice(symbol);
+        if (price) {
+          elizaLogger.info(`Using CoinGecko price for ${symbol}: $${price.price}`);
+        }
+      }
+
+      // Priority 3: Try YEI Finance legacy multi-oracle approach (for YEI-supported symbols)
       if (!price) {
         const yeiSupportedSymbols = ['BTC', 'ETH', 'SEI', 'USDC', 'USDT'];
         if (yeiSupportedSymbols.includes(symbol.toUpperCase())) {
@@ -223,19 +251,19 @@ export class SeiOracleProvider {
               price = {
                 symbol,
                 price: yeiPrice,
-                source: 'yei-multi-oracle',
+                source: 'yei-legacy-oracle',
                 timestamp: Date.now(),
                 confidence: 0.95
               };
-              elizaLogger.info(`Using YEI multi-oracle price for ${symbol}: $${price.price}`);
+              elizaLogger.info(`Using YEI legacy oracle price for ${symbol}: $${price.price}`);
             }
           } catch (error) {
-            elizaLogger.warn(`YEI oracle failed for ${symbol}: ${error}`);
+            elizaLogger.warn(`YEI legacy oracle failed for ${symbol}: ${error}`);
           }
         }
       }
 
-      // Priority 3: Pyth Network (on-chain oracle)
+      // Priority 4: Pyth Network (on-chain oracle)
       if (!price) {
         price = await this.getPythPrice(symbol);
         if (price) {
@@ -243,7 +271,7 @@ export class SeiOracleProvider {
         }
       }
 
-      // Priority 4: Binance CEX API (may be geo-blocked)
+      // Priority 5: Binance CEX API (may be geo-blocked)
       if (!price) {
         price = await this.getCexPrice(symbol);
         if (price) {
@@ -463,6 +491,76 @@ export class SeiOracleProvider {
       return null;
     } catch (error) {
       elizaLogger.error(`CEX price fetch error for ${symbol}: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get price from YEI Finance Multi-Oracle contract
+   * Uses token-specific oracle addresses with getLatestPrice() interface
+   */
+  private async getYeiMultiOraclePrice(symbol: string): Promise<PriceFeed | null> {
+    try {
+      const oracleAddress = this.yeiMultiOracleAddresses[symbol.toUpperCase() as keyof YeiMultiOracleAddresses];
+
+      if (!oracleAddress) {
+        elizaLogger.debug(`No YEI Multi-Oracle address configured for ${symbol}`);
+        return null;
+      }
+
+      const publicClient = this.getMainnetClient();
+
+      // YEI Finance Multi-Oracle ABI for getLatestPrice()
+      const result = await publicClient.readContract({
+        address: oracleAddress as `0x${string}`,
+        abi: [
+          {
+            name: 'getLatestPrice',
+            type: 'function',
+            stateMutability: 'view',
+            inputs: [],
+            outputs: [
+              { name: 'price', type: 'uint256' },
+              { name: 'timestamp', type: 'uint256' },
+              { name: 'decimals', type: 'uint8' }
+            ]
+          }
+        ] as const,
+        functionName: 'getLatestPrice'
+      }) as [bigint, bigint, number];
+
+      const price = result[0];
+      const timestamp = result[1];
+      const decimals = result[2];
+
+      // Validate price data
+      if (!price || price === BigInt(0)) {
+        elizaLogger.warn(`YEI Multi-Oracle returned zero price for ${symbol}`);
+        return null;
+      }
+
+      // Calculate formatted price: price / (10 ** decimals)
+      const formattedPrice = Number(price) / Math.pow(10, decimals);
+      const timestampMs = Number(timestamp) * 1000; // Convert to milliseconds
+
+      // Validate that price is recent (within 1 hour)
+      const now = Date.now();
+      if (now - timestampMs > 3600000) {
+        elizaLogger.warn(`YEI Multi-Oracle price too old for ${symbol}: ${Math.floor((now - timestampMs) / 1000)}s ago`);
+        // Still return the price but log the warning
+      }
+
+      elizaLogger.info(`YEI Multi-Oracle price for ${symbol}: $${formattedPrice.toFixed(6)} (decimals: ${decimals}, age: ${Math.floor((now - timestampMs) / 1000)}s)`);
+
+      return {
+        symbol,
+        price: formattedPrice,
+        timestamp: timestampMs,
+        source: 'YEI Multi-Oracle',
+        confidence: 0.98
+      };
+    } catch (error) {
+      elizaLogger.error(`YEI Multi-Oracle price fetch error for ${symbol}: ${error}`);
       return null;
     }
   }
