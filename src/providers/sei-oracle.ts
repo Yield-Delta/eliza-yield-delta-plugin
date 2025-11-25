@@ -218,25 +218,25 @@ export class SeiOracleProvider {
       // }
 
       // **PRIORITY ORDER: Real-time price sources**
-      // 1. YEI Finance Multi-Oracle (PRIMARY - token-specific contracts with getLatestPrice)
-      // 2. CoinGecko (fallback - reliable, no geo-blocking, instant response)
+      // 1. CoinGecko (PRIMARY - reliable, no geo-blocking, instant response)
+      // 2. YEI Finance Multi-Oracle (fallback - token-specific contracts with getLatestPrice)
       // 3. YEI Finance legacy multi-oracle (API3, Pyth, Redstone - for supported symbols)
       // 4. Pyth Network (on-chain oracle)
       // 5. Binance CEX API (may be geo-blocked in some regions)
 
       let price: PriceFeed | null = null;
 
-      // Priority 1: YEI Finance Multi-Oracle (PRIMARY - direct token-specific contracts)
-      price = await this.getYeiMultiOraclePrice(symbol);
+      // Priority 1: CoinGecko API (PRIMARY - most reliable, no geo-blocking)
+      price = await this.getCoinGeckoPrice(symbol);
       if (price) {
-        elizaLogger.info(`Using YEI Multi-Oracle price for ${symbol}: $${price.price}`);
+        elizaLogger.info(`Using CoinGecko price for ${symbol}: $${price.price}`);
       }
 
-      // Priority 2: CoinGecko API (fallback - most reliable, no geo-blocking)
+      // Priority 2: YEI Finance Multi-Oracle (fallback - direct token-specific contracts)
       if (!price) {
-        price = await this.getCoinGeckoPrice(symbol);
+        price = await this.getYeiMultiOraclePrice(symbol);
         if (price) {
-          elizaLogger.info(`Using CoinGecko price for ${symbol}: $${price.price}`);
+          elizaLogger.info(`Using YEI Multi-Oracle price for ${symbol}: $${price.price}`);
         }
       }
 
