@@ -238,6 +238,30 @@ export class VaultProvider {
         elizaLogger.info(`Querying vaults directly for ${customerAddress}...`);
         const portfolios: FormattedCustomerPortfolio[] = [];
 
+        // Define vault configurations with correct decimals
+        const vaultConfigs: Record<string, { decimals: number }> = {
+            [VaultName.SEI]: { decimals: 18 },
+            [VaultName.USDC]: { decimals: 6 },
+            // Add other vaults with their respective decimals as needed
+            // Default to 18 for other vaults
+        };
+
+        // ABI for getCustomerStats function
+        const GET_CUSTOMER_STATS_ABI = [{
+            name: 'getCustomerStats',
+            type: 'function',
+            stateMutability: 'view',
+            inputs: [{ name: 'customer', type: 'address' }],
+            outputs: [
+                { name: 'shares', type: 'uint256' },
+                { name: 'shareValue', type: 'uint256' },
+                { name: 'totalDeposited', type: 'uint256' },
+                { name: 'totalWithdrawn', type: 'uint256' },
+                { name: 'depositTime', type: 'uint256' },
+                { name: 'lockTimeRemaining', type: 'uint256' }
+            ]
+        }] as const;
+
         // Query each configured vault
         for (const [vaultName, vaultAddress] of Object.entries(this.vaultAddresses)) {
             if (!vaultAddress) continue; // Skip unconfigured vaults
@@ -245,45 +269,55 @@ export class VaultProvider {
             try {
                 elizaLogger.info(`Checking ${vaultName} at ${vaultAddress}...`);
 
-                // Get user's share balance
-                const shareBalance = await this.publicClient.readContract({
-                    address: vaultAddress,
-                    abi: [{
-                        name: 'balanceOf',
-                        type: 'function',
-                        stateMutability: 'view',
-                        inputs: [{ name: 'account', type: 'address' }],
-                        outputs: [{ name: '', type: 'uint256' }]
-                    }] as const,
-                    functionName: 'balanceOf',
-                    args: [customerAddress]
-                }) as bigint;
+                // Get vault-specific decimals (default to 18 if not specified)
+                const decimals = vaultConfigs[vaultName]?.decimals || 18;
+                elizaLogger.info(`Using ${decimals} decimals for ${vaultName}`);
 
-                // If user has no shares in this vault, skip it
-                if (shareBalance === BigInt(0)) {
+                // Get customer stats from vault
+                const stats = await this.publicClient.readContract({
+                    address: vaultAddress,
+                    abi: GET_CUSTOMER_STATS_ABI,
+                    functionName: 'getCustomerStats',
+                    args: [customerAddress]
+                }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint];
+
+                const [shares, shareValue, totalDeposited, totalWithdrawn, depositTime, lockTimeRemaining] = stats;
+
+                // Skip if no position
+                if (shares === 0n && totalDeposited === 0n) {
+                    elizaLogger.info(`No position in ${vaultName}`);
                     continue;
                 }
 
+                // Format values with correct decimals
+                const shareBalance = parseFloat(formatUnits(shares, decimals));
+                const currentValue = parseFloat(formatUnits(shareValue, decimals));
+                const deposited = parseFloat(formatUnits(totalDeposited, decimals));
+                const withdrawn = parseFloat(formatUnits(totalWithdrawn, decimals));
+
+                // Calculate P&L correctly (including withdrawals)
+                const totalValue = currentValue + withdrawn;
+                const unrealizedGains = totalValue - deposited;
+
                 const displayName = VaultDisplayNames[vaultName as VaultName];
 
-                // For now, we can't get detailed deposit history without the dashboard
-                // So we'll return basic balance information
                 portfolios.push({
                     vaultAddress,
                     vaultName: displayName,
-                    shareBalance: Number(formatUnits(shareBalance, 18)),
-                    shareValue: Number(formatUnits(shareBalance, 6)), // Approximate
-                    totalDeposited: 0, // Not available without dashboard
-                    totalWithdrawn: 0, // Not available without dashboard
-                    unrealizedGains: 0, // Not available without dashboard
-                    depositTimestamp: 0, // Not available without dashboard
-                    lockTimeRemaining: 0, // Not available without dashboard
-                    canWithdraw: true // Assume true without lock info
+                    shareBalance,
+                    shareValue: currentValue,
+                    totalDeposited: deposited,
+                    totalWithdrawn: withdrawn,
+                    unrealizedGains,
+                    depositTimestamp: Number(depositTime),
+                    lockTimeRemaining: Number(lockTimeRemaining),
+                    canWithdraw: Number(lockTimeRemaining) === 0
                 });
 
-                elizaLogger.info(`Found position in ${displayName}: ${shareBalance} shares`);
+                elizaLogger.info(`Found position in ${displayName}: ${shareBalance} shares, value: ${currentValue}, P&L: ${unrealizedGains > 0 ? '+' : ''}${unrealizedGains}`);
             } catch (error) {
-                elizaLogger.warn(`Failed to query ${vaultName}: ${error}`);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                elizaLogger.error(`Failed to query ${vaultName} at ${vaultAddress}: ${errorMessage}`);
                 // Continue to next vault
             }
         }
